@@ -93,6 +93,7 @@ let setup sctx ~dir =
          ~impl:{ path   = Path.relative utop_exe_dir main_module_filename
                ; syntax = Module.Syntax.OCaml
                }
+         ~kind:Impl
          ~obj_name:exe_name)
   in
   let loc = Loc.in_dir (Path.to_string dir) in

@@ -58,6 +58,12 @@ module Visibility : sig
   include Dune_lang.Conv with type t := t
 end
 
+module Kind : sig
+  type t = Intf_only | Virtual | Impl
+
+  include Dune_lang.Conv with type t := t
+end
+
 type t
 
 (** [obj_name] Object name. It is different from [name] for wrapped modules. *)
@@ -66,6 +72,7 @@ val make
   -> ?intf:File.t
   -> ?obj_name:string
   -> visibility:Visibility.t
+  -> kind:Kind.t
   -> Name.t
   -> t
 
@@ -143,8 +150,10 @@ end with type module_ := t
 
 val is_public : t -> bool
 val is_private : t -> bool
+val is_virtual : t -> bool
 
 val set_private : t -> t
+val set_virtual : t -> t
 
 val remove_files : t -> t
 

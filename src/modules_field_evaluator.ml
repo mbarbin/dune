@@ -2,11 +2,6 @@ open Stdune
 
 module Buildable = Dune_file.Buildable
 
-type t =
-  { all_modules : Module.Name_map.t
-  ; virtual_modules : Module.Name_map.t
-  }
-
 let eval =
   let module Value = struct
     type t = (Module.t, Module.Name.t) result
@@ -211,12 +206,17 @@ let eval ~modules:(all_modules : Module.Name_map.t)
   );
   check_invalid_module_listing ~buildable:conf ~intf_only
     ~modules ~virtual_modules ~private_modules;
-  let drop_locs = Module.Name.Map.map ~f:snd in
-  { all_modules =
-      Module.Name.Map.map modules ~f:(fun (_, m) ->
-        if Module.Name.Map.mem private_modules (Module.name m) then
+  let all_modules =
+    Module.Name.Map.map modules ~f:(fun (_, m) ->
+      let m = if Module.Name.Map.mem private_modules (Module.name m) then
           Module.set_private m
         else
-          m)
-  ; virtual_modules = drop_locs virtual_modules
-  }
+          m in
+      let m = if Module.Name.Map.mem virtual_modules (Module.name m) then
+          Module.set_virtual m
+        else
+          m in
+      m
+    )
+  in
+  all_modules

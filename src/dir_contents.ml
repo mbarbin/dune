@@ -151,7 +151,8 @@ let modules_of_files ~dir ~files =
   let impls = parse_one_set impl_files in
   let intfs = parse_one_set intf_files in
   Module.Name.Map.merge impls intfs ~f:(fun name impl intf ->
-    Some (Module.make name ~visibility:Public ?impl ?intf))
+    let kind = Module.Kind.(if impl = None then Intf_only else Impl) in
+    Some (Module.make name ~visibility:Public ~kind ?impl ?intf))
 
 let build_modules_map (d : _ Dir_with_dune.t) ~modules =
   let scope = d.scope in
@@ -159,10 +160,7 @@ let build_modules_map (d : _ Dir_with_dune.t) ~modules =
     List.filter_partition_map d.data ~f:(fun stanza ->
       match (stanza : Stanza.t) with
       | Library lib ->
-        let { Modules_field_evaluator.
-              all_modules = modules
-            ; virtual_modules
-            } =
+        let modules =
           Modules_field_evaluator.eval ~modules
             ~buildable:lib.buildable
             ~virtual_modules:lib.virtual_modules
@@ -180,15 +178,11 @@ let build_modules_map (d : _ Dir_with_dune.t) ~modules =
             |> Result.ok_exn
         in
         Left ( lib
-             , Lib_modules.make lib ~dir:d.ctx_dir modules ~virtual_modules
-                 ~main_module_name
+             , Lib_modules.make lib ~dir:d.ctx_dir modules ~main_module_name
              )
       | Executables exes
       | Tests { exes; _} ->
-        let { Modules_field_evaluator.
-              all_modules = modules
-            ; virtual_modules = _
-            } =
+        let modules =
           Modules_field_evaluator.eval ~modules
             ~buildable:exes.buildable
             ~virtual_modules:None

@@ -130,6 +130,60 @@ module Visibility = struct
   let is_private t = not (is_public t)
 end
 
+module Kind = struct
+  type t =
+    | Intf_only
+    | Virtual
+    | Impl
+
+  let to_string = function
+    | Intf_only -> "intf_only"
+    | Virtual -> "virtual"
+    | Impl -> "impl"
+
+  let pp fmt t = Format.pp_print_string fmt (to_string t)
+
+  let to_sexp t = Sexp.Encoder.string (to_string t)
+
+  let encode =
+    let open Dune_lang.Encoder in
+    function
+    | Intf_only -> string "intf_only"
+    | Virtual -> string "virtual"
+    | Impl -> string "impl"
+
+  let decode =
+    let open Stanza.Decoder in
+    enum
+      [ "intf_only", Intf_only
+      ; "virtual", Virtual
+      ; "impl", Impl
+      ]
+(*
+  let of_module ~virtual_modules m =
+    match Module.Name.Map.mem virtual_modules (Module.name m)
+        , Module.is_private m
+        , Module.has_impl m with
+    | true, false, false -> Some Virtual
+    | false, false, true -> Some Public
+    | false, false, false -> Some Intf_only
+    | false, true, true -> Some Private
+    | false, true, false -> None (* we don't need these modules *)
+    | true, true, _ (* no private virtual modules*)
+    | true, false, true (* virtual modules don't have impls *)
+      -> assert false
+*)
+
+  let has_impl = function
+    | Impl -> true
+    | Intf_only
+    | Virtual -> false
+
+  let is_virtual = function
+    | Virtual -> true
+    | _ -> false
+end
+
 type t =
   { name       : Name.t
   ; impl       : File.t option
@@ -137,6 +191,7 @@ type t =
   ; obj_name   : string
   ; pp         : (unit, string list) Build.t option
   ; visibility : Visibility.t
+  ; kind : Kind.t
   }
 
 let name t = t.name
@@ -144,7 +199,7 @@ let pp_flags t = t.pp
 let intf t = t.intf
 let impl t = t.impl
 
-let make ?impl ?intf ?obj_name ~visibility name =
+let make ?impl ?intf ?obj_name ~visibility ~kind name =
   let file : File.t =
     match impl, intf with
     | None, None ->
@@ -156,6 +211,11 @@ let make ?impl ?intf ?obj_name ~visibility name =
     | Some file, _
     | _, Some file -> file
   in
+  (* let kind = match kind, impl, intf with *)
+  (*   | Some k, _, _ -> k *)
+  (*   | None, None, Some _ -> Kind.Intf_only *)
+  (*   | None, _, _ -> Impl *)
+  (* in *)
   let obj_name =
     match obj_name with
     | Some s -> s
@@ -171,11 +231,12 @@ let make ?impl ?intf ?obj_name ~visibility name =
   ; obj_name
   ; pp = None
   ; visibility
+  ; kind
   }
 
 let real_unit_name t = Name.of_string (Filename.basename t.obj_name)
 
-let has_impl t = Option.is_some t.impl
+let has_impl t = Kind.has_impl t.kind
 let has_intf t = Option.is_some t.intf
 
 let impl_only t = has_impl t && not (has_intf t)
@@ -246,7 +307,7 @@ let src_dir t =
 
 let set_pp t pp = { t with pp }
 
-let to_sexp { name; impl; intf; obj_name ; pp ; visibility } =
+let to_sexp { name; impl; intf; obj_name ; pp ; visibility; kind } =
   let open Sexp.Encoder in
   record
     [ "name", Name.to_sexp name
@@ -255,15 +316,17 @@ let to_sexp { name; impl; intf; obj_name ; pp ; visibility } =
     ; "intf", (option File.to_sexp) intf
     ; "pp", (option string) (Option.map ~f:(fun _ -> "has pp") pp)
     ; "visibility", Visibility.to_sexp visibility
+    ; "kind", Kind.to_sexp kind
     ]
 
-let pp fmt { name; impl; intf; obj_name ; pp = _ ; visibility } =
+let pp fmt { name; impl; intf; obj_name ; pp = _ ; visibility; kind } =
   Fmt.record fmt
     [ "name", Fmt.const Name.pp name
     ; "impl", Fmt.const (Fmt.optional File.pp) impl
     ; "intf", Fmt.const (Fmt.optional File.pp) intf
     ; "obj_name", Fmt.const Format.pp_print_string obj_name
     ; "visibility", Fmt.const Visibility.pp visibility
+    ; "kind", Fmt.const Kind.pp kind
     ]
 
 let wrapped_compat t =
@@ -305,9 +368,12 @@ end
 
 let is_public t = Visibility.is_public t.visibility
 let is_private t = Visibility.is_private t.visibility
+let is_virtual t = Kind.is_virtual t.kind
 
 let set_private t =
   { t with visibility = Private }
+let set_virtual t =
+  { t with kind = Virtual }
 
 let visibility t = t.visibility
 
@@ -347,13 +413,22 @@ let encode
        ; obj_name
        ; pp = _
        ; visibility
+       ; kind
        } as t) =
   let open Dune_lang.Encoder in
+  let has_impl = (has_impl t) in
+  let kind =
+    match kind with
+    | Kind.Impl when has_impl -> None
+    | Intf_only when not has_impl -> None
+    | Impl | Virtual | Intf_only -> Some kind
+  in
   record_fields
     [ field "name" Name.encode name
     ; field "obj_name" string obj_name
     ; field "visibility" Visibility.encode visibility
-    ; field_b "impl" (has_impl t)
+    ; field_o "kind" Kind.encode kind
+    ; field_b "impl" has_impl
     ; field_b "intf" (has_intf t)
     ]
 
@@ -363,6 +438,7 @@ let decode ~dir =
     let%map name = field "name" Name.decode
     and obj_name = field "obj_name" string
     and visibility = field "visibility" Visibility.decode
+    and kind = field_o "kind" Kind.decode
     and impl = field_b "impl"
     and intf = field_b "intf"
     in
@@ -373,7 +449,12 @@ let decode ~dir =
       else
         None
     in
+    let kind = match kind with
+      | Some k -> k
+      | None when impl -> Impl
+      | None -> Intf_only
+    in
     let intf = file intf Intf in
     let impl = file impl Impl in
-    make ~obj_name ~visibility ?impl ?intf name
+    make ~obj_name ~visibility ~kind ?impl ?intf name
   )

@@ -26,7 +26,6 @@ val make
   :  Dune_file.Library.t
   -> dir:Path.t
   -> Module.Name_map.t
-  -> virtual_modules:Module.Name_map.t
   -> main_module_name:Module.Name.t option
   -> t
 
@@ -37,14 +36,6 @@ val for_compilation : t -> Module.Name_map.t
 val have_artifacts : t -> Module.Name_map.t
 
 val for_alias : t -> Module.Name_map.t
-
-module Virtual : sig
-  val encode : t -> Dune_lang.t list
-  val decode
-    :  main_module_name:Module.Name.t
-    -> dir:Path.t
-    -> t Dune_lang.Decoder.t
-end
 
 val encode : t -> Dune_lang.t list
 
